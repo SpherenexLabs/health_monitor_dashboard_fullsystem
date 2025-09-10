@@ -1,0 +1,464 @@
+/* Health Monitoring Dashboard Styles */
+
+/* Base Styles & Typography */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  line-height: 1.5;
+  color: #1f2937;
+  background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+  min-height: 100vh;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+/* Layout */
+.container {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+header {
+  margin-bottom: 2rem;
+}
+
+.dashboard-header{
+  width: 80%;
+  height: 200px;
+  background: linear-gradient(135deg, #f9fafb 0%, #f89d9d 100%);
+  border-radius: 0.75rem;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+  padding: 2rem;
+  margin: 0 auto;
+  border: 1px solid rgba(229, 231, 235, 0.5);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+header h1 {
+  font-size: 1.875rem;
+  color: #1f2937;
+  margin-bottom: 0.25rem;
+}
+
+header p {
+  color: #4b5563;
+}
+
+.last-updated {
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.section-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #4b5563;
+  margin-bottom: 1rem;
+  margin-top: 2rem;
+}
+
+/* Card Grids */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(1, 1fr);
+  gap: 1.5rem;
+  margin-bottom: 2.5rem;
+}
+
+.trends-grid {
+  display: grid;
+  grid-template-columns: repeat(1, 1fr);
+  gap: 1.5rem;
+}
+
+@media (min-width: 768px) {
+  .metrics-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .metrics-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  
+  .trends-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Card Styles */
+.card {
+  background-color: white;
+  border-radius: 0.75rem;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+  transition: all 0.3s ease;
+  border: 1px solid rgba(229, 231, 235, 0.5);
+  backdrop-filter: blur(5px);
+  margin-bottom: 1rem;
+}
+
+.card:hover {
+  box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+}
+
+.card-body {
+  padding: 1.5rem;
+}
+
+/* Metric Card Header */
+.metric-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.metric-title {
+  display: flex;
+  align-items: center;
+}
+
+.metric-title h3 {
+  margin-left: 0.75rem;
+  font-size: 1.125rem;
+  font-weight: 500;
+  color: #1f2937;
+}
+
+.metric-icon {
+  width: 2rem;
+  height: 2rem;
+}
+
+.heart-icon {
+  color: #ef4444;
+}
+
+.activity-icon {
+  color: #3b82f6;
+}
+
+.droplet-icon {
+  color: #8b5cf6;
+}
+
+.thermometer-icon {
+  color: #f59e0b;
+}
+
+/* Status Badge */
+.status-badge {
+  font-size: 0.875rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-weight: 500;
+}
+
+.status-normal {
+  background-color: #dcfce7;
+  color: #166534;
+}
+
+.status-elevated {
+  background-color: #fef9c3;
+  color: #854d0e;
+}
+
+.status-high {
+  background-color: #fee2e2;
+  color: #b91c1c;
+}
+
+.status-low {
+  background-color: #dbeafe;
+  color: #1e40af;
+}
+
+/* Card Metrics Display */
+.metric-value {
+  font-size: 3.5rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.value-normal {
+  color: #22c55e;
+}
+
+.value-elevated {
+  color: #eab308;
+}
+
+.value-high {
+  color: #ef4444;
+}
+
+.value-low {
+  color: #3b82f6;
+}
+
+.metric-unit {
+  margin-left: 0.25rem;
+  font-size: 1.125rem;
+  color: #6b7280;
+  margin-bottom: 0.5rem;
+  align-self: flex-end;
+}
+
+/* Sparkline Chart */
+.sparkline-container {
+  height: 4rem;
+  margin-top: 0.75rem;
+}
+
+.no-data {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #9ca3af;
+}
+
+/* Detailed Chart */
+.chart-container {
+  height: 16rem;
+}
+
+/* Loading Spinner */
+.loading-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background-color: #f3f4f6;
+}
+
+.loading-content {
+  text-align: center;
+}
+
+.spinner {
+  width: 4rem;
+  height: 4rem;
+  border: 0.25rem solid #3b82f6;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto;
+}
+
+.loading-text {
+  margin-top: 1rem;
+  font-size: 1.125rem;
+  font-weight: 500;
+  color: #4b5563;
+}
+
+/* Error State */
+.error-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background-color: #f3f4f6;
+}
+
+.error-content {
+  text-align: center;
+  padding: 1.5rem;
+  background-color: white;
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  max-width: 28rem;
+}
+
+.error-icon-container {
+  width: 3rem;
+  height: 3rem;
+  background-color: #fee2e2;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 1rem auto;
+}
+
+.error-icon {
+  height: 1.5rem;
+  width: 1.5rem;
+  color: #ef4444;
+}
+
+.error-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #dc2626;
+  margin-bottom: 0.5rem;
+}
+
+.error-message {
+  color: #4b5563;
+  margin-bottom: 1rem;
+}
+
+.retry-button {
+  padding: 0.5rem 1rem;
+  background-color: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 0.375rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.retry-button:hover {
+  background-color: #2563eb;
+}
+
+/* Footer */
+footer {
+  margin-top: 3rem;
+  text-align: center;
+  color: #6b7280;
+  font-size: 0.875rem;
+}
+
+footer p + p {
+  margin-top: 0.25rem;
+}
+
+/* Line Chart Colors */
+.heart-rate-line {
+  stroke: #ef4444;
+}
+
+.spo2-line {
+  stroke: #3b82f6;
+}
+
+.systolic-line {
+  stroke: #8b5cf6;
+}
+
+.diastolic-line {
+  stroke: #a855f7;
+}
+
+.temperature-line {
+  stroke: #f59e0b;
+}
+
+/* Animations */
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* Chart Tooltip Customization */
+.recharts-tooltip-wrapper .recharts-default-tooltip {
+  background-color: rgba(255, 255, 255, 0.9) !important;
+  border: none !important;
+  border-radius: 0.5rem !important;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1) !important;
+  padding: 0.75rem !important;
+}
+
+.recharts-tooltip-label {
+  font-weight: 600 !important;
+  color: #374151 !important;
+}
+
+/* Dashboard Container */
+.dashboard-container {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #f9fafb 0%, #e5e7eb 100%);
+  padding: 1.5rem;
+}
+
+/* Metric Value Container */
+.metric-value-container {
+  display: flex;
+  align-items: flex-end;
+  margin: 1rem 0;
+}
+
+.card {
+  border: 1px solid rgba(229, 231, 235, 0.5);
+  backdrop-filter: blur(5px);
+}
+
+/* Chart Styles */
+.chart-card {
+  background-color: white;
+  border-radius: 0.75rem;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  border: 1px solid rgba(229, 231, 235, 0.5);
+  backdrop-filter: blur(5px);
+}
+
+.chart-title {
+  font-size: 1.125rem;
+  font-weight: 500;
+  color: #1f2937;
+  margin-bottom: 1rem;
+}
+
+.chart-container {
+  height: 18rem;
+}
+
+/* Glassmorphism Effect for Cards */
+.glass-card {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* Pulse Animation for Live Data */
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(59, 130, 246, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+  }
+}
+
+.live-indicator {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  background-color: #22c55e;
+  border-radius: 50%;
+  margin-right: 0.5rem;
+  animation: pulse 2s infinite;
+}
