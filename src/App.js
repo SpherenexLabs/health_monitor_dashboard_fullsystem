@@ -1,708 +1,1643 @@
-// import { useState, useEffect } from 'react';
-// import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-// import { Activity, Heart, Thermometer, Droplet, PieChart } from 'lucide-react';
+// import React, { useState, useEffect, useRef } from 'react';
 
-// // Import the CSS file
-// import './App.css';
-
-// // Initialize Firebase at the component level
-// const HealthDashboard = () => {
-//   // State for health data and history
-//   const [healthData, setHealthData] = useState({
-//     Diastolic: 0,
-//     Heart_Rate: 0,
-//     SpO2: 0,
-//     Systolic: 0,
-//     Temperature: 0
-//   });
-  
-//   const [historyData, setHistoryData] = useState({
-//     Diastolic: [],
-//     Heart_Rate: [],
-//     SpO2: [],
-//     Systolic: [],
-//     Temperature: []
-//   });
-  
+// const HealthMonitorDashboard = () => {
+//   const [healthData, setHealthData] = useState([]);
+//   const [currentData, setCurrentData] = useState(null);
+//   const [alerts, setAlerts] = useState([]);
 //   const [loading, setLoading] = useState(true);
 //   const [error, setError] = useState(null);
+//   const [connectionStatus, setConnectionStatus] = useState('Checking...');
+//   const [dataSource, setDataSource] = useState('Unknown');
+//   const [lastUpdate, setLastUpdate] = useState(null);
 
-//   useEffect(() => {
-//     // Firebase configuration from user
-//     const firebaseConfig = {
-//       apiKey: "AIzaSyB9ererNsNonAzH0zQo_GS79XPOyCoMxr4",
-//       authDomain: "waterdtection.firebaseapp.com",
-//       databaseURL: "https://waterdtection-default-rtdb.firebaseio.com",
-//       projectId: "waterdtection",
-//       storageBucket: "waterdtection.firebasestorage.app",
-//       messagingSenderId: "690886375729",
-//       appId: "1:690886375729:web:172c3a47dda6585e4e1810",
-//       measurementId: "G-TXF33Y6XY0"
-//     };
+//   // Replace with your actual Google Sheet ID from the URL
+//   const SHEET_ID = '1xqlPkMveVa8QT1K1MEKCpZjmlRJyVQLFt9F3qfWy4Bg';
+//   const SHEET_NAME = 'Gluoose'; // Adjust if your sheet has a different name
 
-//     // Import Firebase dynamically
-//     const loadFirebase = async () => {
-//       try {
-//         // Dynamic imports
-//         const firebaseApp = await import('firebase/app');
-//         const firebaseDatabase = await import('firebase/database');
+//   const canvasRefs = {
+//     hr: useRef(null),
+//     spo2: useRef(null),
+//     bp: useRef(null),
+//     glucose: useRef(null)
+//   };
 
-//         // Initialize Firebase
-//         const app = firebaseApp.initializeApp(firebaseConfig);
-//         const database = firebaseDatabase.getDatabase(app);
-//         const healthRef = firebaseDatabase.ref(database, 'Health_Monitor');
-
-//         // Listen for changes to the health data
-//         firebaseDatabase.onValue(healthRef, (snapshot) => {
-//           const data = snapshot.val();
-//           if (data) {
-//             setHealthData(data);
-            
-//             // Update history data with timestamp
-//             const timestamp = new Date().toLocaleTimeString();
-//             setHistoryData(prevHistory => {
-//               const newHistory = { ...prevHistory };
-              
-//               // For each health metric, add new data point to its history array
-//               Object.keys(data).forEach(key => {
-//                 // Keep only the last 20 data points
-//                 const updatedHistory = [...(prevHistory[key] || []), {
-//                   time: timestamp,
-//                   value: parseFloat(data[key])
-//                 }].slice(-20);
-                
-//                 newHistory[key] = updatedHistory;
-//               });
-              
-//               return newHistory;
-//             });
-            
-//             setLoading(false);
-//           }
-//         }, (error) => {
-//           setError(`Error fetching data: ${error.message}`);
-//           setLoading(false);
-//         });
-        
-//         return () => {
-//           // Clean up listeners
-//           firebaseDatabase.off(healthRef);
-//         };
-//       } catch (error) {
-//         setError(`Failed to initialize Firebase: ${error.message}`);
-//         setLoading(false);
+//   // Function to fetch data from Google Sheets using the same method as reference
+//   const fetchGoogleSheetData = async () => {
+//     try {
+//       setLoading(true);
+//       setConnectionStatus('Connecting to Google Sheet...');
+      
+//       // Using Google Sheets API in a way that's accessible without authentication
+//       const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=${SHEET_NAME}`;
+//       const response = await fetch(url);
+      
+//       if (!response.ok) {
+//         throw new Error(`HTTP ${response.status}: Sheet may not be public or accessible`);
 //       }
-//     };
+      
+//       const text = await response.text();
+      
+//       // Parse the JSONP-like response (Google's format)
+//       const jsonStart = text.indexOf('{');
+//       const jsonEnd = text.lastIndexOf('}') + 1;
+//       const jsonData = JSON.parse(text.substring(jsonStart, jsonEnd));
+      
+//       if (jsonData.table && jsonData.table.rows && jsonData.table.rows.length > 0) {
+//         // Get column headers from the table
+//         const headers = jsonData.table.cols.map(col => col.label);
+        
+//         // Process all rows for historical data
+//         const processedData = jsonData.table.rows.map((row) => {
+//           const rowData = {};
+          
+//           // Map the data according to headers
+//           headers.forEach((header, colIndex) => {
+//             if (row.c[colIndex] && (row.c[colIndex].v !== null)) {
+//               // Use formatted value if available, otherwise use raw value
+//               rowData[header] = row.c[colIndex].f || row.c[colIndex].v;
+//             } else {
+//               rowData[header] = null;
+//             }
+//           });
 
-//     loadFirebase();
+//           // Transform data keys to match our expected format
+//           return {
+//             timestamp: rowData['Time'] || new Date().toLocaleTimeString(),
+//             date: rowData['Date'] || new Date().toLocaleDateString(),
+//             hr: parseFloat(rowData['HR']) || 0,
+//             spo2: parseFloat(rowData['SPO2']) || 0,
+//             bp: rowData['BP'] || '0/0',
+//             glucose: parseFloat(rowData['Glucose']) || 0,
+//             finger: parseInt(rowData['Finger']) || 0
+//           };
+//         }).filter(row => row.hr > 0 || row.spo2 > 0 || row.glucose > 0); // Filter out empty rows
+        
+//         // Get latest values for the cards
+//         const latestRow = processedData[processedData.length - 1];
+        
+//         setConnectionStatus('✅ Connected to Google Sheet');
+//         setDataSource('Google Sheet (Live Data)');
+//         setHealthData(processedData);
+//         setCurrentData(latestRow);
+//         setLastUpdate(new Date().toLocaleString());
+//         setLoading(false);
+//         setError(null);
+        
+//         // Check for glucose alerts
+//         if (latestRow && latestRow.glucose) {
+//           checkGlucoseLevel(latestRow.glucose);
+//         }
+        
+//         console.log(`✅ SUCCESS: Fetched ${processedData.length} health records from Google Sheet`);
+//         return processedData;
+//       } else {
+//         throw new Error('No data found in Google Sheet');
+//       }
+//     } catch (error) {
+//       console.error('❌ ERROR: Could not fetch from Google Sheet:', error.message);
+//       setConnectionStatus('❌ Using Fallback Data - Check Sheet Permissions');
+//       setDataSource('Fallback Data (Not from Sheet)');
+//       setError(`Failed to fetch data: ${error.message}. Make sure your Google Sheet is publicly accessible with "Anyone with the link" viewing permission.`);
+      
+//       // Generate fallback data
+//       generateFallbackData();
+//       setLoading(false);
+//     }
+//   };
+
+//   // Generate fallback data if we can't access the sheet
+//   const generateFallbackData = () => {
+//     const fallbackData = [];
+//     const now = new Date();
+    
+//     // Generate 20 data points with 1-minute intervals
+//     for (let i = 20; i >= 0; i--) {
+//       const time = new Date(now.getTime() - i * 60000);
+//       fallbackData.push({
+//         timestamp: time.toLocaleTimeString(),
+//         date: time.toLocaleDateString(),
+//         hr: Math.floor(60 + Math.random() * 40),
+//         spo2: Math.floor(95 + Math.random() * 5),
+//         bp: `${Math.floor(110 + Math.random() * 20)}/${Math.floor(70 + Math.random() * 10)}`,
+//         glucose: Math.floor(80 + Math.random() * 40),
+//         finger: Math.random() > 0.3 ? 1 : 0
+//       });
+//     }
+    
+//     setHealthData(fallbackData);
+//     setCurrentData(fallbackData[fallbackData.length - 1]);
+//     setLastUpdate(new Date().toLocaleString());
+//   };
+
+//   // Initial data fetch and setup polling for real-time updates
+//   useEffect(() => {
+//     const fetchData = async () => {
+//       await fetchGoogleSheetData();
+//     };
+    
+//     fetchData();
+    
+//     // Poll for new data every 30 seconds for real-time updates
+//     const intervalId = setInterval(() => {
+//       console.log('🔄 Auto-refreshing health data...');
+//       fetchGoogleSheetData();
+//     }, 30000);
+    
+//     // Clean up interval on component unmount
+//     return () => clearInterval(intervalId);
 //   }, []);
 
-//   // No simulation - only update when Firebase values change
-//   // We'll keep track of real changes from Firebase only
-
-//   // Helper function to determine status color based on values
-//   const getStatusColor = (metric, value) => {
-//     const numValue = parseFloat(value);
+//   const checkGlucoseLevel = (glucose) => {
+//     let alertMessage = '';
+//     let alertType = '';
     
-//     switch(metric) {
-//       case 'Heart_Rate':
-//         return numValue < 60 ? 'text-blue-500' : 
-//                numValue > 100 ? 'text-red-500' : 'text-green-500';
-//       case 'SpO2':
-//         return numValue < 90 ? 'text-red-500' : 
-//                numValue < 95 ? 'text-yellow-500' : 'text-green-500';
-//       case 'Systolic':
-//         return numValue > 140 ? 'text-red-500' : 
-//                numValue > 120 ? 'text-yellow-500' : 'text-green-500';
-//       case 'Diastolic':
-//         return numValue > 90 ? 'text-red-500' : 
-//                numValue > 80 ? 'text-yellow-500' : 'text-green-500';
-//       case 'Temperature':
-//         return numValue > 37.5 ? 'text-red-500' : 
-//                numValue < 36 ? 'text-blue-500' : 'text-green-500';
-//       default:
-//         return 'text-gray-500';
+//     if (glucose < 60) {
+//       alertMessage = '🚨 LOW GLUCOSE LEVEL! Take immediate action.';
+//       alertType = 'danger';
+//     } else if (glucose >= 60 && glucose <= 110) {
+//       alertMessage = '✅ Normal glucose level';
+//       alertType = 'success';
+//     } else {
+//       alertMessage = '⚠️ HIGH GLUCOSE LEVEL! Monitor closely.';
+//       alertType = 'warning';
+//     }
+    
+//     const newAlert = {
+//       id: Date.now(),
+//       message: alertMessage,
+//       type: alertType,
+//       time: new Date().toLocaleTimeString(),
+//       glucose: glucose
+//     };
+    
+//     setAlerts(prev => [newAlert, ...prev.slice(0, 4)]);
+//     simulateTelegramAlert(alertMessage, glucose);
+//   };
+
+//   const simulateTelegramAlert = (message, glucose) => {
+//     console.log(`Telegram Alert: ${message} (Glucose: ${glucose}mg/dL)`);
+//     // Here you would implement actual Telegram API call
+//   };
+
+//   const drawTrendChart = (canvasRef, data, color, label, unit) => {
+//     if (!canvasRef.current || !data.length) return;
+    
+//     const canvas = canvasRef.current;
+//     const ctx = canvas.getContext('2d');
+//     const { width, height } = canvas;
+    
+//     ctx.clearRect(0, 0, width, height);
+    
+//     // Draw background
+//     ctx.fillStyle = '#f8f9fa';
+//     ctx.fillRect(0, 0, width, height);
+    
+//     // Calculate chart area
+//     const padding = 40;
+//     const chartWidth = width - padding * 2;
+//     const chartHeight = height - padding * 2;
+    
+//     // Find min and max values
+//     const values = data.map(d => d.value).filter(v => v > 0);
+//     if (values.length === 0) return;
+    
+//     const minValue = Math.min(...values);
+//     const maxValue = Math.max(...values);
+//     const range = maxValue - minValue || 1;
+    
+//     // Draw grid lines
+//     ctx.strokeStyle = '#e0e0e0';
+//     ctx.lineWidth = 1;
+//     for (let i = 0; i <= 5; i++) {
+//       const y = padding + (chartHeight / 5) * i;
+//       ctx.beginPath();
+//       ctx.moveTo(padding, y);
+//       ctx.lineTo(width - padding, y);
+//       ctx.stroke();
+//     }
+    
+//     // Draw trend line
+//     ctx.strokeStyle = color;
+//     ctx.lineWidth = 3;
+//     ctx.beginPath();
+    
+//     const stepX = chartWidth / (values.length - 1);
+    
+//     values.forEach((value, index) => {
+//       const x = padding + index * stepX;
+//       const y = padding + chartHeight - ((value - minValue) / range) * chartHeight;
+      
+//       if (index === 0) {
+//         ctx.moveTo(x, y);
+//       } else {
+//         ctx.lineTo(x, y);
+//       }
+//     });
+    
+//     ctx.stroke();
+    
+//     // Draw points
+//     ctx.fillStyle = color;
+//     values.forEach((value, index) => {
+//       const x = padding + index * stepX;
+//       const y = padding + chartHeight - ((value - minValue) / range) * chartHeight;
+      
+//       ctx.beginPath();
+//       ctx.arc(x, y, 4, 0, 2 * Math.PI);
+//       ctx.fill();
+//     });
+    
+//     // Draw Y-axis labels
+//     ctx.fillStyle = '#666';
+//     ctx.font = '12px Arial';
+//     ctx.textAlign = 'right';
+//     for (let i = 0; i <= 5; i++) {
+//       const value = minValue + (range / 5) * (5 - i);
+//       const y = padding + (chartHeight / 5) * i + 4;
+//       ctx.fillText(Math.round(value), padding - 10, y);
 //     }
 //   };
-  
-//   // Helper function to get icon for each metric
-//   const getMetricIcon = (metric) => {
-//     switch(metric) {
-//       case 'Heart_Rate':
-//         return <Heart className="w-8 h-8 text-red-500" />;
-//       case 'SpO2':
-//         return <Activity className="w-8 h-8 text-blue-500" />;
-//       case 'Systolic':
-//       case 'Diastolic':
-//         return <Droplet className="w-8 h-8 text-purple-500" />;
-//       case 'Temperature':
-//         return <Thermometer className="w-8 h-8 text-amber-500" />;
+
+//   const getStatusMessage = (type, value) => {
+//     switch (type) {
+//       case 'hr':
+//         if (value >= 60 && value <= 100) return '✅ Heart rate is within normal range.';
+//         return '⚠️ Heart rate needs monitoring.';
+//       case 'spo2':
+//         if (value >= 95) return '✅ Oxygen saturation is optimal.';
+//         return '🚨 Low oxygen saturation detected.';
+//       case 'bp':
+//         const systolic = parseInt(value.split('/')[0]);
+//         if (systolic < 140) return '✅ Blood pressure is normal.';
+//         return '⚠️ Elevated blood pressure detected.';
+//       case 'glucose':
+//         if (value >= 60 && value <= 110) return '✅ Glucose levels are normal.';
+//         if (value < 60) return '🚨 Low glucose level detected.';
+//         return '⚠️ High glucose level detected.';
 //       default:
-//         return <PieChart className="w-8 h-8 text-gray-500" />;
+//         return '✅ Levels are normal.';
 //     }
 //   };
-  
-//   // Helper function to get display name for each metric
-//   const getMetricDisplayName = (metric) => {
-//     switch(metric) {
-//       case 'Heart_Rate':
-//         return 'Heart Rate';
-//       case 'SpO2':
-//         return 'Oxygen Saturation';
-//       case 'Systolic':
-//         return 'Systolic BP';
-//       case 'Diastolic':
-//         return 'Diastolic BP';
-//       case 'Temperature':
-//         return 'Temperature';
+
+//   const getRecommendations = (type) => {
+//     switch (type) {
+//       case 'hr':
+//         return [
+//           'Continue monitoring heart rate trends',
+//           'Maintain regular physical activity'
+//         ];
+//       case 'spo2':
+//         return [
+//           'Monitor breathing patterns',
+//           'Ensure proper sensor placement'
+//         ];
+//       case 'bp':
+//         return [
+//           'Track pressure variations',
+//           'Monitor dietary sodium intake'
+//         ];
+//       case 'glucose':
+//         return [
+//           'Monitor blood sugar regularly',
+//           'Track meal timing and composition'
+//         ];
 //       default:
-//         return metric;
+//         return ['Continue monitoring'];
 //     }
 //   };
-  
-//   // Helper function to get units for each metric
-//   const getMetricUnit = (metric) => {
-//     switch(metric) {
-//       case 'Heart_Rate':
-//         return 'bpm';
-//       case 'SpO2':
-//         return '%';
-//       case 'Systolic':
-//       case 'Diastolic':
-//         return 'mmHg';
-//       case 'Temperature':
-//         return '°C';
-//       default:
-//         return '';
+
+//   useEffect(() => {
+//     if (healthData.length > 0) {
+//       const hrData = healthData.map((d, i) => ({ value: d.hr, index: i })).filter(d => d.value > 0);
+//       const spo2Data = healthData.map((d, i) => ({ value: d.spo2, index: i })).filter(d => d.value > 0);
+//       const bpData = healthData.map((d, i) => ({ value: parseInt(d.bp.split('/')[0]), index: i })).filter(d => d.value > 0);
+//       const glucoseData = healthData.map((d, i) => ({ value: d.glucose, index: i })).filter(d => d.value > 0);
+      
+//       drawTrendChart(canvasRefs.hr, hrData, '#e74c3c', 'Heart Rate', 'BPM');
+//       drawTrendChart(canvasRefs.spo2, spo2Data, '#3498db', 'SpO2', '%');
+//       drawTrendChart(canvasRefs.bp, bpData, '#9b59b6', 'Blood Pressure', 'mmHg');
+//       drawTrendChart(canvasRefs.glucose, glucoseData, '#f39c12', 'Glucose', 'mg/dL');
 //     }
-//   };
-  
-//   // Helper function to get line color for each metric
-//   const getLineColor = (metric) => {
-//     switch(metric) {
-//       case 'Heart_Rate':
-//         return '#ef4444';
-//       case 'SpO2':
-//         return '#3b82f6';
-//       case 'Systolic':
-//         return '#8b5cf6';
-//       case 'Diastolic':
-//         return '#a855f7';
-//       case 'Temperature':
-//         return '#f59e0b';
-//       default:
-//         return '#6b7280';
-//     }
-//   };
+//   }, [healthData]);
 
 //   if (loading) {
 //     return (
-//       <div className="loading-container">
-//         <div className="loading-content">
-//           <div className="spinner"></div>
-//           <p className="loading-text">Loading health data...</p>
-//         </div>
-//       </div>
-//     );
-//   }
-
-//   if (error) {
-//     return (
-//       <div className="error-container">
-//         <div className="error-content">
-//           <div className="error-icon-container">
-//             <svg xmlns="http://www.w3.org/2000/svg" className="error-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-//               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-//             </svg>
-//           </div>
-//           <h2 className="error-title">Connection Error</h2>
-//           <p className="error-message">{error}</p>
-//           <button 
-//             onClick={() => window.location.reload()} 
-//             className="retry-button"
-//           >
-//             Try Again
-//           </button>
+//       <div style={{
+//         minHeight: '100vh',
+//         background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+//         display: 'flex',
+//         justifyContent: 'center',
+//         alignItems: 'center',
+//         color: 'white',
+//         fontSize: '1.5rem'
+//       }}>
+//         <div style={{ textAlign: 'center' }}>
+//           <div style={{ fontSize: '3rem', marginBottom: '20px' }}>⏳</div>
+//           Loading health data from Google Sheets...
 //         </div>
 //       </div>
 //     );
 //   }
 
 //   return (
-//     <div className="dashboard-container">
-//       <div className="container">
-//         <header className='dashboard-header'>
-//           <h1>Health Monitoring Dashboard</h1>
-//           <p>Real-time health metrics from Firebase</p>
-//           <div className="last-updated">
-//             <span className="live-indicator"></span>
-//             Last updated: {new Date().toLocaleString()}
+//     <div style={{
+//       minHeight: '100vh',
+//       background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+//       padding: '20px',
+//       fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif"
+//     }}>
+//       {/* Header */}
+//       <div style={{
+//         textAlign: 'center',
+//         marginBottom: '30px',
+//         color: 'white'
+//       }}>
+//         <h1 style={{
+//           fontSize: '2.5rem',
+//           margin: '0',
+//           textShadow: '2px 2px 4px rgba(0,0,0,0.3)'
+//         }}>
+//           🏥 Health Performance Trends
+//         </h1>
+//         <p style={{ fontSize: '1.1rem', opacity: 0.9 }}>
+//           Real-time monitoring from Google Sheets • Last updated: {lastUpdate}
+//         </p>
+//         {error && (
+//           <div style={{
+//             background: 'rgba(255,0,0,0.1)',
+//             border: '1px solid rgba(255,0,0,0.3)',
+//             borderRadius: '8px',
+//             padding: '10px',
+//             margin: '10px 0',
+//             color: '#ff6b6b'
+//           }}>
+//             ⚠️ {error}
 //           </div>
-//         </header>
-        
-//         {/* Current Values Section */}
-//         <div style={{marginBottom: '2.5rem'}}>
-//           <h2 className="section-title">Current Health Metrics</h2>
-//           <div className="metrics-grid">
-//             {Object.keys(healthData).map(metric => (
-//               <div key={metric} className="card glass-card">
-//                 <div className="card-body">
-//                   <div className="metric-header">
-//                     <div className="metric-title">
-//                       <div className="metric-icon">
-//                         {getMetricIcon(metric)}
-//                       </div>
-//                       <h3>{getMetricDisplayName(metric)}</h3>
-//                     </div>
-//                     <span className={`status-badge ${
-//                       getStatusColor(metric, healthData[metric]) === 'text-green-500' ? 'status-normal' :
-//                       getStatusColor(metric, healthData[metric]) === 'text-yellow-500' ? 'status-elevated' :
-//                       getStatusColor(metric, healthData[metric]) === 'text-red-500' ? 'status-high' :
-//                       getStatusColor(metric, healthData[metric]) === 'text-blue-500' ? 'status-low' : ''
-//                     }`}>
-//                       {
-//                         getStatusColor(metric, healthData[metric]) === 'text-green-500' ? 'Normal' :
-//                         getStatusColor(metric, healthData[metric]) === 'text-yellow-500' ? 'Elevated' :
-//                         getStatusColor(metric, healthData[metric]) === 'text-red-500' ? 'High' :
-//                         getStatusColor(metric, healthData[metric]) === 'text-blue-500' ? 'Low' : 'N/A'
-//                       }
-//                     </span>
-//                   </div>
-                  
-//                   <div className="metric-value-container">
-//                     <span className={`metric-value ${
-//                       getStatusColor(metric, healthData[metric]) === 'text-green-500' ? 'value-normal' :
-//                       getStatusColor(metric, healthData[metric]) === 'text-yellow-500' ? 'value-elevated' :
-//                       getStatusColor(metric, healthData[metric]) === 'text-red-500' ? 'value-high' :
-//                       getStatusColor(metric, healthData[metric]) === 'text-blue-500' ? 'value-low' : ''
-//                     }`}>
-//                       {parseFloat(healthData[metric]).toFixed(metric === 'Temperature' ? 1 : 0)}
-//                     </span>
-//                     <span className="metric-unit">{getMetricUnit(metric)}</span>
-//                   </div>
-                  
-//                   {/* Mini sparkline chart */}
-//                   <div className="sparkline-container">
-//                     {historyData[metric] && historyData[metric].length > 0 ? (
-//                       <ResponsiveContainer width="100%" height="100%">
-//                         <LineChart data={historyData[metric]}>
-//                           <Line 
-//                             type="monotone" 
-//                             dataKey="value" 
-//                             stroke={getLineColor(metric)} 
-//                             strokeWidth={2}
-//                             dot={false}
-//                             isAnimationActive={true}
-//                             className={`${metric.toLowerCase()}-line`}
-//                           />
-//                         </LineChart>
-//                       </ResponsiveContainer>
-//                     ) : (
-//                       <div className="no-data">
-//                         No data available
-//                       </div>
-//                     )}
-//                   </div>
-//                 </div>
-//               </div>
-//             ))}
+//         )}
+//       </div>
+
+//       {/* Connection Status */}
+//       <div style={{
+//         background: 'rgba(255,255,255,0.95)',
+//         borderRadius: '15px',
+//         padding: '20px',
+//         marginBottom: '30px',
+//         boxShadow: '0 10px 30px rgba(0,0,0,0.2)'
+//       }}>
+//         <div style={{
+//           display: 'flex',
+//           justifyContent: 'space-between',
+//           alignItems: 'center',
+//           marginBottom: '15px'
+//         }}>
+//           <div>
+//             <h3 style={{ margin: '0', color: '#2c3e50' }}>📊 Connection Status</h3>
+//             <p style={{ margin: '5px 0 0 0', color: '#7f8c8d' }}>
+//               Status: {connectionStatus} | Source: {dataSource}
+//             </p>
 //           </div>
+//           <button
+//             onClick={fetchGoogleSheetData}
+//             disabled={loading}
+//             style={{
+//               background: loading ? '#bdc3c7' : '#3498db',
+//               color: 'white',
+//               border: 'none',
+//               borderRadius: '8px',
+//               padding: '10px 20px',
+//               cursor: loading ? 'not-allowed' : 'pointer',
+//               fontSize: '0.9rem',
+//               fontWeight: 'bold'
+//             }}
+//           >
+//             {loading ? '⏳ Refreshing...' : '🔄 Refresh Data'}
+//           </button>
 //         </div>
         
-//         {/* Detailed Graphs Section */}
-//         <div>
-//           <h2 className="section-title">Detailed Trends</h2>
-//           <div className="trends-grid">
-//             {Object.keys(healthData).map(metric => (
-//               <div key={`graph-${metric}`} className="chart-card">
-//                 <h3 className="chart-title">
-//                   {getMetricDisplayName(metric)} Trend
-//                 </h3>
-                
-//                 <div className="chart-container">
-//                   {historyData[metric] && historyData[metric].length > 0 ? (
-//                     <ResponsiveContainer width="100%" height="100%">
-//                       <LineChart 
-//                         data={historyData[metric]}
-//                         margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-//                       >
-//                         <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-//                         <XAxis 
-//                           dataKey="time" 
-//                           tick={{ fontSize: 12 }} 
-//                           tickFormatter={(tick) => tick.split(':').slice(-2).join(':')}
-//                         />
-//                         <YAxis domain={['auto', 'auto']} />
-//                         <Tooltip 
-//                           formatter={(value) => [`${value.toFixed(metric === 'Temperature' ? 1 : 0)} ${getMetricUnit(metric)}`, getMetricDisplayName(metric)]}
-//                           labelFormatter={(label) => `Time: ${label}`}
-//                         />
-//                         <Line 
-//                           type="monotone" 
-//                           dataKey="value" 
-//                           stroke={getLineColor(metric)} 
-//                           strokeWidth={3}
-//                           dot={{ fill: getLineColor(metric), r: 4 }}
-//                           activeDot={{ r: 6, stroke: 'white', strokeWidth: 2 }}
-//                           isAnimationActive={true}
-//                           className={`${metric.toLowerCase()}-line`}
-//                         />
-//                       </LineChart>
-//                     </ResponsiveContainer>
-//                   ) : (
-//                     <div className="no-data">
-//                       No trend data available yet
-//                     </div>
-//                   )}
-//                 </div>
-//               </div>
-//             ))}
+//         {!connectionStatus.includes('✅') && (
+//           <div style={{
+//             background: '#fff3cd',
+//             border: '1px solid #ffeaa7',
+//             borderRadius: '8px',
+//             padding: '15px',
+//             color: '#856404'
+//           }}>
+//             <p style={{ margin: '0 0 10px 0', fontWeight: 'bold' }}>
+//               📋 To enable live data access:
+//             </p>
+//             <ol style={{ margin: '0', paddingLeft: '20px' }}>
+//               <li>Open your Google Sheet: <a href={`https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit`} target="_blank" rel="noopener noreferrer" style={{ color: '#0366d6' }}>Click here</a></li>
+//               <li>Click "Share" → Change to "Anyone with the link" → Set to "Viewer"</li>
+//               <li>Refresh this dashboard</li>
+//             </ol>
+//           </div>
+//         )}
+//       </div>
+
+//       {/* Current Status Cards */}
+//       {currentData && (
+//         <div style={{
+//           display: 'grid',
+//           gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+//           gap: '20px',
+//           marginBottom: '30px'
+//         }}>
+//           <div style={{
+//             background: 'rgba(255,255,255,0.95)',
+//             borderRadius: '15px',
+//             padding: '20px',
+//             textAlign: 'center',
+//             boxShadow: '0 10px 30px rgba(0,0,0,0.2)'
+//           }}>
+//             <div style={{ fontSize: '2rem', marginBottom: '10px' }}>❤️</div>
+//             <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#e74c3c' }}>
+//               {currentData.hr} BPM
+//             </div>
+//             <div style={{ color: '#7f8c8d' }}>Heart Rate</div>
+//           </div>
+          
+//           <div style={{
+//             background: 'rgba(255,255,255,0.95)',
+//             borderRadius: '15px',
+//             padding: '20px',
+//             textAlign: 'center',
+//             boxShadow: '0 10px 30px rgba(0,0,0,0.2)'
+//           }}>
+//             <div style={{ fontSize: '2rem', marginBottom: '10px' }}>🫁</div>
+//             <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#3498db' }}>
+//               {currentData.spo2}%
+//             </div>
+//             <div style={{ color: '#7f8c8d' }}>SpO2</div>
+//           </div>
+          
+//           <div style={{
+//             background: 'rgba(255,255,255,0.95)',
+//             borderRadius: '15px',
+//             padding: '20px',
+//             textAlign: 'center',
+//             boxShadow: '0 10px 30px rgba(0,0,0,0.2)'
+//           }}>
+//             <div style={{ fontSize: '2rem', marginBottom: '10px' }}>🩸</div>
+//             <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#9b59b6' }}>
+//               {currentData.bp}
+//             </div>
+//             <div style={{ color: '#7f8c8d' }}>Blood Pressure</div>
+//           </div>
+          
+//           <div style={{
+//             background: 'rgba(255,255,255,0.95)',
+//             borderRadius: '15px',
+//             padding: '20px',
+//             textAlign: 'center',
+//             boxShadow: '0 10px 30px rgba(0,0,0,0.2)'
+//           }}>
+//             <div style={{ fontSize: '2rem', marginBottom: '10px' }}>🍯</div>
+//             <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#f39c12' }}>
+//               {currentData.glucose}
+//             </div>
+//             <div style={{ color: '#7f8c8d' }}>Glucose (mg/dL)</div>
+//           </div>
+          
+//           <div style={{
+//             background: 'rgba(255,255,255,0.95)',
+//             borderRadius: '15px',
+//             padding: '20px',
+//             textAlign: 'center',
+//             boxShadow: '0 10px 30px rgba(0,0,0,0.2)'
+//           }}>
+//             <div style={{ fontSize: '2rem', marginBottom: '10px' }}>
+//               {currentData.finger === 1 ? '👆' : '✋'}
+//             </div>
+//             <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: currentData.finger === 1 ? '#27ae60' : '#e74c3c' }}>
+//               {currentData.finger === 1 ? 'Finger Pressed' : 'Finger Not Pressed'}
+//             </div>
+//             <div style={{ color: '#7f8c8d' }}>Finger Status</div>
 //           </div>
 //         </div>
+//       )}
+
+//       {/* Performance Trends */}
+//       <div style={{
+//         background: 'rgba(255,255,255,0.95)',
+//         borderRadius: '15px',
+//         padding: '20px',
+//         marginBottom: '30px',
+//         boxShadow: '0 10px 30px rgba(0,0,0,0.2)'
+//       }}>
+//         <h2 style={{ margin: '0 0 30px 0', color: '#2c3e50' }}>Performance Trends</h2>
         
-//         {/* Footer */}
-//         <footer>
-//           <p>Health Monitoring Dashboard - Connected to Firebase Realtime Database</p>
-//           <p>Data updates automatically as values change in the database</p>
-//         </footer>
+//         <div style={{
+//           display: 'grid',
+//           gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))',
+//           gap: '30px'
+//         }}>
+//           {/* Heart Rate Trend */}
+//           <div>
+//             <h3 style={{ color: '#2c3e50', marginBottom: '15px' }}>Heart Rate Trend</h3>
+//             <div style={{
+//               background: '#fff5f5',
+//               border: '2px solid #fed7d7',
+//               borderRadius: '10px',
+//               padding: '15px',
+//               marginBottom: '15px'
+//             }}>
+//               <div style={{ color: '#c53030', fontWeight: 'bold', marginBottom: '10px' }}>
+//                 {currentData && getStatusMessage('hr', currentData.hr)}
+//               </div>
+//               <ol style={{ margin: '0', paddingLeft: '20px', color: '#4a5568' }}>
+//                 {getRecommendations('hr').map((rec, i) => (
+//                   <li key={i}>{rec}</li>
+//                 ))}
+//               </ol>
+//             </div>
+//             <canvas
+//               ref={canvasRefs.hr}
+//               width="380"
+//               height="200"
+//               style={{
+//                 width: '100%',
+//                 height: '200px',
+//                 border: '1px solid #e0e0e0',
+//                 borderRadius: '8px'
+//               }}
+//             />
+//           </div>
+
+//           {/* SpO2 Trend */}
+//           <div>
+//             <h3 style={{ color: '#2c3e50', marginBottom: '15px' }}>SpO2 Trend</h3>
+//             <div style={{
+//               background: '#f0f9ff',
+//               border: '2px solid #bee3f8',
+//               borderRadius: '10px',
+//               padding: '15px',
+//               marginBottom: '15px'
+//             }}>
+//               <div style={{ color: '#2b6cb0', fontWeight: 'bold', marginBottom: '10px' }}>
+//                 {currentData && getStatusMessage('spo2', currentData.spo2)}
+//               </div>
+//               <ol style={{ margin: '0', paddingLeft: '20px', color: '#4a5568' }}>
+//                 {getRecommendations('spo2').map((rec, i) => (
+//                   <li key={i}>{rec}</li>
+//                 ))}
+//               </ol>
+//             </div>
+//             <canvas
+//               ref={canvasRefs.spo2}
+//               width="380"
+//               height="200"
+//               style={{
+//                 width: '100%',
+//                 height: '200px',
+//                 border: '1px solid #e0e0e0',
+//                 borderRadius: '8px'
+//               }}
+//             />
+//           </div>
+
+//           {/* Blood Pressure Trend */}
+//           <div>
+//             <h3 style={{ color: '#2c3e50', marginBottom: '15px' }}>Blood Pressure Trend</h3>
+//             <div style={{
+//               background: '#faf5ff',
+//               border: '2px solid #e9d8fd',
+//               borderRadius: '10px',
+//               padding: '15px',
+//               marginBottom: '15px'
+//             }}>
+//               <div style={{ color: '#805ad5', fontWeight: 'bold', marginBottom: '10px' }}>
+//                 {currentData && getStatusMessage('bp', currentData.bp)}
+//               </div>
+//               <ol style={{ margin: '0', paddingLeft: '20px', color: '#4a5568' }}>
+//                 {getRecommendations('bp').map((rec, i) => (
+//                   <li key={i}>{rec}</li>
+//                 ))}
+//               </ol>
+//             </div>
+//             <canvas
+//               ref={canvasRefs.bp}
+//               width="380"
+//               height="200"
+//               style={{
+//                 width: '100%',
+//                 height: '200px',
+//                 border: '1px solid #e0e0e0',
+//                 borderRadius: '8px'
+//               }}
+//             />
+//           </div>
+
+//           {/* Glucose Trend */}
+//           <div>
+//             <h3 style={{ color: '#2c3e50', marginBottom: '15px' }}>Glucose Trend</h3>
+//             <div style={{
+//               background: '#fffbf0',
+//               border: '2px solid #feebc8',
+//               borderRadius: '10px',
+//               padding: '15px',
+//               marginBottom: '15px'
+//             }}>
+//               <div style={{ color: '#d69e2e', fontWeight: 'bold', marginBottom: '10px' }}>
+//                 {currentData && getStatusMessage('glucose', currentData.glucose)}
+//               </div>
+//               <ol style={{ margin: '0', paddingLeft: '20px', color: '#4a5568' }}>
+//                 {getRecommendations('glucose').map((rec, i) => (
+//                   <li key={i}>{rec}</li>
+//                 ))}
+//               </ol>
+//             </div>
+//             <canvas
+//               ref={canvasRefs.glucose}
+//               width="380"
+//               height="200"
+//               style={{
+//                 width: '100%',
+//                 height: '200px',
+//                 border: '1px solid #e0e0e0',
+//                 borderRadius: '8px'
+//               }}
+//             />
+//           </div>
+//         </div>
+//       </div>
+
+//       {/* Alerts Section */}
+//       {alerts.length > 0 && (
+//         <div style={{
+//           background: 'rgba(255,255,255,0.95)',
+//           borderRadius: '15px',
+//           padding: '20px',
+//           boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
+//           marginBottom: '30px'
+//         }}>
+//           <h2 style={{ margin: '0 0 15px 0', color: '#2c3e50' }}>
+//             🚨 Recent Alerts & Notifications
+//           </h2>
+//           {alerts.map(alert => (
+//             <div
+//               key={alert.id}
+//               style={{
+//                 padding: '15px',
+//                 margin: '10px 0',
+//                 borderRadius: '10px',
+//                 background: alert.type === 'danger' ? '#fff5f5' : 
+//                            alert.type === 'warning' ? '#fffbf0' : '#f0f9ff',
+//                 border: `2px solid ${alert.type === 'danger' ? '#fed7d7' : 
+//                                     alert.type === 'warning' ? '#feebc8' : '#bee3f8'}`
+//               }}
+//             >
+//               <div style={{
+//                 display: 'flex',
+//                 justifyContent: 'space-between',
+//                 alignItems: 'center'
+//               }}>
+//                 <span style={{
+//                   fontSize: '1.1rem',
+//                   color: alert.type === 'danger' ? '#c53030' : 
+//                          alert.type === 'warning' ? '#d69e2e' : '#2b6cb0'
+//                 }}>
+//                   {alert.message}
+//                 </span>
+//                 <span style={{
+//                   fontSize: '0.9rem',
+//                   color: '#718096'
+//                 }}>
+//                   {alert.time}
+//                 </span>
+//               </div>
+//               <div style={{
+//                 fontSize: '0.9rem',
+//                 color: '#4a5568',
+//                 marginTop: '5px'
+//               }}>
+//                 📱 Telegram notification sent • Glucose: {alert.glucose} mg/dL
+//               </div>
+//             </div>
+//           ))}
+//         </div>
+//       )}
+
+//       {/* Footer */}
+//       <div style={{
+//         textAlign: 'center',
+//         color: 'rgba(255,255,255,0.8)',
+//         fontSize: '0.9rem'
+//       }}>
+//         <p>📊 Data updates every 30 seconds automatically</p>
+//         <p>Connected to Google Sheets • Total readings: {healthData.length}</p>
+//         <p>Sheet ID: {SHEET_ID}</p>
 //       </div>
 //     </div>
 //   );
 // };
 
-// export default HealthDashboard;
+// export default HealthMonitorDashboard;
 
 
 
-import React, { useState, useEffect } from 'react';
-import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
-import { Zap, Activity, Wifi, WifiOff } from 'lucide-react';
-import './Dual.css';
 
-// Firebase configuration
-const firebaseConfig = {
-  apiKey: "AIzaSyB9ererNsNonAzH0zQo_GS79XPOyCoMxr4",
-  authDomain: "waterdtection.firebaseapp.com",
-  databaseURL: "https://waterdtection-default-rtdb.firebaseio.com",
-  projectId: "waterdtection",
-  storageBucket: "waterdtection.firebasestorage.app",
-  messagingSenderId: "690886375729",
-  appId: "1:690886375729:web:172c3a47dda6585e4e1810",
-  measurementId: "G-TXF33Y6XY0"
-};
+import React, { useState, useEffect, useRef } from 'react';
 
-const Dashboard = () => {
-  const [currentValue, setCurrentValue] = useState(0);
-  const [voltageValue, setVoltageValue] = useState(0);
-  const [currentHistory, setCurrentHistory] = useState([]);
-  const [voltageHistory, setVoltageHistory] = useState([]);
-  const [isConnected, setIsConnected] = useState(false);
+const HealthMonitorDashboard = () => {
+  const [healthData, setHealthData] = useState([]);
+  const [currentData, setCurrentData] = useState(null);
+  const [alerts, setAlerts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [connectionStatus, setConnectionStatus] = useState('Checking...');
+  const [dataSource, setDataSource] = useState('Unknown');
   const [lastUpdate, setLastUpdate] = useState(null);
 
-  useEffect(() => {
-    // Initialize Firebase
-    const initFirebase = async () => {
-      try {
-        // Import Firebase modules dynamically
-        const { initializeApp } = await import('https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js');
-        const { getDatabase, ref, onValue, off } = await import('https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js');
-        
-        const app = initializeApp(firebaseConfig);
-        const database = getDatabase(app);
-        
-        // Reference to the Dual_Axis data
-        const dataRef = ref(database, 'Dual_Axis');
-        
-        // Set up real-time listener
-        const unsubscribe = onValue(dataRef, (snapshot) => {
-          const data = snapshot.val();
-          if (data) {
-            const current = parseFloat(data.Current) || 0;
-            const voltage = parseFloat(data.Voltage) || 0;
-            const timestamp = new Date().toLocaleTimeString();
-            
-            setCurrentValue(current);
-            setVoltageValue(voltage);
-            setLastUpdate(new Date());
-            setIsConnected(true);
-            
-            // Update history (keep last 20 points)
-            setCurrentHistory(prev => {
-              const newHistory = [...prev, { time: timestamp, value: current }];
-              return newHistory.slice(-20);
-            });
-            
-            setVoltageHistory(prev => {
-              const newHistory = [...prev, { time: timestamp, value: voltage }];
-              return newHistory.slice(-20);
-            });
-          }
-        }, (error) => {
-          console.error('Firebase connection error:', error);
-          setIsConnected(false);
-        });
-        
-        // Cleanup function
-        return () => off(dataRef, unsubscribe);
-      } catch (error) {
-        console.error('Failed to initialize Firebase:', error);
-        setIsConnected(false);
-      }
-    };
+  // Replace with your actual Google Sheet ID from the URL
+  const SHEET_ID = '1xqlPkMveVa8QT1K1MEKCpZjmlRJyVQLFt9F3qfWy4Bg';
+  const SHEET_NAME = 'Gluoose'; // Fixed the typo from 'Gluoose' to 'Glucose'
 
-    initFirebase();
-  }, []);
-
-  const formatTime = (timeStr) => {
-    return timeStr.split(':').slice(1).join(':');
+  const canvasRefs = {
+    hr: useRef(null),
+    spo2: useRef(null),
+    bp: useRef(null),
+    glucose: useRef(null)
   };
 
-  const getStatusClass = (value, type) => {
-    if (type === 'current') {
-      if (value > 10) return 'danger';
-      if (value > 5) return 'warning';
-      return 'safe';
-    } else {
-      if (value > 5) return 'danger';
-      if (value > 3) return 'warning';
-      return 'safe';
+  // Function to fetch data from Google Sheets - NO FALLBACK DATA
+  const fetchGoogleSheetData = async () => {
+    try {
+      setLoading(true);
+      setConnectionStatus('Connecting to Google Sheet...');
+      
+      // Using Google Sheets API in a way that's accessible without authentication
+      const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=${SHEET_NAME}`;
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: Sheet may not be public or accessible`);
+      }
+      
+      const text = await response.text();
+      
+      // Parse the JSONP-like response (Google's format)
+      const jsonStart = text.indexOf('{');
+      const jsonEnd = text.lastIndexOf('}') + 1;
+      const jsonData = JSON.parse(text.substring(jsonStart, jsonEnd));
+      
+      if (jsonData.table && jsonData.table.rows && jsonData.table.rows.length > 0) {
+        // Get column headers from the table
+        const headers = jsonData.table.cols.map(col => col.label);
+        console.log('Sheet headers found:', headers);
+        
+        // Process all rows for historical data
+        const processedData = jsonData.table.rows.map((row) => {
+          const rowData = {};
+          
+          // Map the data according to headers
+          headers.forEach((header, colIndex) => {
+            if (row.c[colIndex] && (row.c[colIndex].v !== null)) {
+              // Use formatted value if available, otherwise use raw value
+              rowData[header] = row.c[colIndex].f || row.c[colIndex].v;
+            } else {
+              rowData[header] = null;
+            }
+          });
+
+          // Transform data keys to match our expected format
+          return {
+            timestamp: rowData['Time'] || null,
+            date: rowData['Date'] || null,
+            hr: parseFloat(rowData['HR']) || 0,
+            spo2: parseFloat(rowData['SPO2']) || 0,
+            bp: rowData['BP'] || '0/0',
+            glucose: parseFloat(rowData['Glucose']) || 0,
+            finger: parseInt(rowData['Finger']) || 0
+          };
+        }).filter(row => 
+          // Only include rows that have valid timestamp and date (allow 0 values for health metrics)
+          row.timestamp && row.date
+        );
+        
+        if (processedData.length === 0) {
+          throw new Error('No valid data rows found in Google Sheet');
+        }
+        
+        // Get latest values for the cards
+        const latestRow = processedData[processedData.length - 1];
+        
+        // SUCCESS - Update state with real data
+        setConnectionStatus('✅ Connected to Google Sheet');
+        setDataSource('Google Sheet (Live Data)');
+        setHealthData(processedData);
+        setCurrentData(latestRow);
+        setLastUpdate(new Date().toLocaleString());
+        setLoading(false);
+        setError(null);
+        
+        // Check for glucose alerts (including 0 values)
+        if (latestRow && latestRow.glucose !== null && latestRow.glucose !== undefined) {
+          checkGlucoseLevel(latestRow.glucose);
+        }
+        
+        console.log(`✅ SUCCESS: Fetched ${processedData.length} health records from Google Sheet`);
+        return processedData;
+      } else {
+        throw new Error('No data table found in Google Sheet response');
+      }
+    } catch (error) {
+      console.error('❌ ERROR: Could not fetch from Google Sheet:', error.message);
+      
+      // NO FALLBACK DATA - Clear everything and show error
+      setConnectionStatus('❌ Failed to Connect to Google Sheet');
+      setDataSource('No Data Available');
+      setHealthData([]);
+      setCurrentData(null);
+      setLoading(false);
+      setError(`Failed to fetch data: ${error.message}. Make sure your Google Sheet is publicly accessible with "Anyone with the link" viewing permission and has the correct sheet name "${SHEET_NAME}".`);
     }
   };
 
-  return (
-    <div className="dashboard-container">
-      <div className="dashboard-wrapper">
+  // Initial data fetch and setup polling for real-time updates
+  useEffect(() => {
+    const fetchData = async () => {
+      await fetchGoogleSheetData();
+    };
+    
+    fetchData();
+    
+    // Poll for new data every 30 seconds for real-time updates
+    const intervalId = setInterval(() => {
+      console.log('🔄 Auto-refreshing health data...');
+      fetchGoogleSheetData();
+    }, 30000);
+    
+    // Clean up interval on component unmount
+    return () => clearInterval(intervalId);
+  }, []);
+
+  const checkGlucoseLevel = (glucose) => {
+    let alertMessage = '';
+    let alertType = '';
+    
+    if (glucose < 60) {
+      alertMessage = '🚨 LOW GLUCOSE LEVEL! Take immediate action.';
+      alertType = 'danger';
+    } else if (glucose >= 60 && glucose <= 110) {
+      alertMessage = '✅ Normal glucose level';
+      alertType = 'success';
+    } else {
+      alertMessage = '⚠️ HIGH GLUCOSE LEVEL! Monitor closely.';
+      alertType = 'warning';
+    }
+    
+    const newAlert = {
+      id: Date.now(),
+      message: alertMessage,
+      type: alertType,
+      time: new Date().toLocaleTimeString(),
+      glucose: glucose
+    };
+    
+    setAlerts(prev => [newAlert, ...prev.slice(0, 4)]);
+    simulateTelegramAlert(alertMessage, glucose);
+  };
+
+  const simulateTelegramAlert = (message, glucose) => {
+    console.log(`Telegram Alert: ${message} (Glucose: ${glucose}mg/dL)`);
+    // Here you would implement actual Telegram API call
+  };
+
+  const removeAlert = (alertId) => {
+    setAlerts(prev => prev.filter(alert => alert.id !== alertId));
+  };
+
+  const drawTrendChart = (canvasRef, data, color, label, unit) => {
+    if (!canvasRef.current || !data.length) return;
+    
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    const { width, height } = canvas;
+    
+    ctx.clearRect(0, 0, width, height);
+    
+    // Draw background
+    ctx.fillStyle = '#f8f9fa';
+    ctx.fillRect(0, 0, width, height);
+    
+    // Calculate chart area
+    const padding = 40;
+    const chartWidth = width - padding * 2;
+    const chartHeight = height - padding * 2;
+    
+    // Find min and max values
+    const values = data.map(d => d.value).filter(v => v > 0);
+    if (values.length === 0) return;
+    
+    const minValue = Math.min(...values);
+    const maxValue = Math.max(...values);
+    const range = maxValue - minValue || 1;
+    
+    // Draw grid lines
+    ctx.strokeStyle = '#e0e0e0';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 5; i++) {
+      const y = padding + (chartHeight / 5) * i;
+      ctx.beginPath();
+      ctx.moveTo(padding, y);
+      ctx.lineTo(width - padding, y);
+      ctx.stroke();
+    }
+    
+    // Draw trend line
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    
+    const stepX = chartWidth / (values.length - 1);
+    
+    values.forEach((value, index) => {
+      const x = padding + index * stepX;
+      const y = padding + chartHeight - ((value - minValue) / range) * chartHeight;
+      
+      if (index === 0) {
+        ctx.moveTo(x, y);
+      } else {
+        ctx.lineTo(x, y);
+      }
+    });
+    
+    ctx.stroke();
+    
+    // Draw points
+    ctx.fillStyle = color;
+    values.forEach((value, index) => {
+      const x = padding + index * stepX;
+      const y = padding + chartHeight - ((value - minValue) / range) * chartHeight;
+      
+      ctx.beginPath();
+      ctx.arc(x, y, 4, 0, 2 * Math.PI);
+      ctx.fill();
+    });
+    
+    // Draw Y-axis labels
+    ctx.fillStyle = '#666';
+    ctx.font = '12px Arial';
+    ctx.textAlign = 'right';
+    for (let i = 0; i <= 5; i++) {
+      const value = minValue + (range / 5) * (5 - i);
+      const y = padding + (chartHeight / 5) * i + 4;
+      ctx.fillText(Math.round(value), padding - 10, y);
+    }
+  };
+
+  const getStatusMessage = (type, value) => {
+    switch (type) {
+      case 'hr':
+        if (!value || value === 0) return '⚪ No heart rate reading - Check sensor connection.';
+        if (value >= 60 && value <= 100) return '✅ Heart rate is within normal range.';
+        if (value < 60) return '🔻 Heart rate is below normal (bradycardia).';
+        return '🔺 Heart rate is above normal (tachycardia).';
+      case 'spo2':
+        if (!value || value === 0) return '⚪ No oxygen saturation reading - Check sensor.';
+        if (value >= 95) return '✅ Oxygen saturation is optimal.';
+        if (value >= 90) return '⚠️ Oxygen saturation is low - monitor closely.';
+        return '🚨 Critical oxygen saturation detected - seek immediate care.';
+      case 'bp':
+        if (!value || value === '0/0' || value === '0') return '⚪ No blood pressure reading - Check cuff placement.';
+        const systolic = parseInt(value.split('/')[0]);
+        const diastolic = parseInt(value.split('/')[1]) || 0;
+        if (systolic < 90) return '🔻 Low blood pressure detected (hypotension).';
+        if (systolic < 120 && diastolic < 80) return '✅ Blood pressure is optimal.';
+        if (systolic < 140 && diastolic < 90) return '⚠️ Blood pressure is elevated - monitor regularly.';
+        return '🔺 High blood pressure detected (hypertension).';
+      case 'glucose':
+        if (!value || value === 0) return '⚪ No glucose reading - Check test strip and meter.';
+        if (value < 60) return '🚨 Critically low glucose level - take immediate action!';
+        if (value >= 60 && value <= 110) return '✅ Glucose levels are normal.';
+        if (value <= 140) return '⚠️ Slightly elevated glucose - monitor diet.';
+        return '🔺 High glucose level detected - consult healthcare provider.';
+      default:
+        return '✅ Levels are normal.';
+    }
+  };
+
+  const getRecommendations = (type, value) => {
+    switch (type) {
+      case 'hr':
+        if (!value || value === 0) return [
+          'Check sensor connection and placement',
+          'Ensure device is properly charged',
+          'Try repositioning the sensor'
+        ];
+        if (value < 60) return [
+          'Monitor for symptoms like dizziness or fatigue',
+          'Consider consulting a healthcare provider',
+          'Track activity levels and medication effects'
+        ];
+        if (value > 100) return [
+          'Consider relaxation techniques',
+          'Monitor caffeine and stress levels',
+          'Track patterns during different activities'
+        ];
+        return [
+          'Continue monitoring heart rate trends',
+          'Maintain regular physical activity',
+          'Keep tracking for baseline establishment'
+        ];
+      case 'spo2':
+        if (!value || value === 0) return [
+          'Check fingertip sensor placement',
+          'Clean sensor and finger surface',
+          'Ensure proper blood circulation'
+        ];
+        if (value < 95) return [
+          'Monitor breathing patterns closely',
+          'Consider seeking medical attention if persistent',
+          'Check for environmental factors affecting breathing'
+        ];
+        return [
+          'Continue monitoring oxygen levels',
+          'Maintain good respiratory health',
+          'Track during different activities'
+        ];
+      case 'bp':
+        if (!value || value === '0/0' || value === '0') return [
+          'Check cuff size and placement',
+          'Ensure arm is at heart level',
+          'Remain still during measurement'
+        ];
+        const systolic = parseInt(value.split('/')[0]);
+        if (systolic >= 140) return [
+          'Monitor dietary sodium intake',
+          'Consider stress management techniques',
+          'Track readings at consistent times'
+        ];
+        if (systolic < 90) return [
+          'Monitor for symptoms like dizziness',
+          'Stay hydrated and avoid sudden movements',
+          'Consider consulting healthcare provider'
+        ];
+        return [
+          'Continue regular monitoring',
+          'Maintain healthy lifestyle habits',
+          'Track daily variations'
+        ];
+      case 'glucose':
+        if (!value || value === 0) return [
+          'Check test strip expiration',
+          'Ensure proper meter calibration',
+          'Verify sufficient blood sample'
+        ];
+        if (value < 60) return [
+          'Take immediate action - consume fast-acting carbs',
+          'Monitor symptoms closely',
+          'Contact healthcare provider if severe'
+        ];
+        if (value > 140) return [
+          'Monitor carbohydrate intake',
+          'Track meal timing and composition',
+          'Consider consulting healthcare provider'
+        ];
+        return [
+          'Continue regular monitoring',
+          'Maintain consistent meal timing',
+          'Track pre and post-meal levels'
+        ];
+      default:
+        return ['Continue monitoring'];
+    }
+  };
+
+  useEffect(() => {
+    if (healthData.length > 0) {
+      const hrData = healthData.map((d, i) => ({ value: d.hr, index: i })).filter(d => d.value > 0);
+      const spo2Data = healthData.map((d, i) => ({ value: d.spo2, index: i })).filter(d => d.value > 0);
+      const bpData = healthData.map((d, i) => ({ value: parseInt(d.bp.split('/')[0]), index: i })).filter(d => d.value > 0);
+      const glucoseData = healthData.map((d, i) => ({ value: d.glucose, index: i })).filter(d => d.value > 0);
+      
+      drawTrendChart(canvasRefs.hr, hrData, '#e74c3c', 'Heart Rate', 'BPM');
+      drawTrendChart(canvasRefs.spo2, spo2Data, '#3498db', 'SpO2', '%');
+      drawTrendChart(canvasRefs.bp, bpData, '#9b59b6', 'Blood Pressure', 'mmHg');
+      drawTrendChart(canvasRefs.glucose, glucoseData, '#f39c12', 'Glucose', 'mg/dL');
+    }
+  }, [healthData]);
+
+  if (loading) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        color: 'white',
+        fontSize: '1.5rem'
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '3rem', marginBottom: '20px' }}>⏳</div>
+          <div>Loading health data from Google Sheets...</div>
+          <div style={{ fontSize: '1rem', marginTop: '10px', opacity: 0.8 }}>
+            Connecting to Sheet: {SHEET_NAME}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state when no data is available
+  if (error && healthData.length === 0) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        padding: '20px',
+        fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif"
+      }}>
         {/* Header */}
-        <div className="dashboard-header">
-          <h1 className="dashboard-title">
-            🌊 Dual Axis Monitoring Dashboard
+        <div style={{
+          textAlign: 'center',
+          marginBottom: '30px',
+          color: 'white'
+        }}>
+          <h1 style={{
+            fontSize: '2.5rem',
+            margin: '0',
+            textShadow: '2px 2px 4px rgba(0,0,0,0.3)'
+          }}>
+            🏥 Health Performance Trends
           </h1>
-          <div className="connection-status">
-            <div className="status-indicator">
-              {isConnected ? (
-                <>
-                  <Wifi style={{ width: '16px', height: '16px', color: '#10b981' }} />
-                  <span>Connected to Firebase</span>
-                </>
-              ) : (
-                <>
-                  <WifiOff style={{ width: '16px', height: '16px', color: '#ef4444' }} />
-                  <span>Disconnected</span>
-                </>
-              )}
-            </div>
-            {lastUpdate && (
-              <span>
-                Last update: {lastUpdate.toLocaleTimeString()}
-              </span>
-            )}
-          </div>
+          <p style={{ fontSize: '1.1rem', opacity: 0.9 }}>
+            Real-time monitoring from Google Sheets
+          </p>
         </div>
 
-        {/* Main Data Cards */}
-        <div className="cards-grid">
-          {/* Current Value Card */}
-          <div className="data-card">
-            <div className="card-header">
-              <div className="card-info">
-                <div className="icon-container current">
-                  <Zap />
-                </div>
-                <div className="card-meta">
-                  <h2>Current</h2>
-                  <p>Real-time current measurement</p>
-                </div>
-              </div>
-              <div className={`connection-indicator ${isConnected ? 'connected' : 'disconnected'}`}></div>
-            </div>
-            
-            <div className="value-display">
-              <div className={`value-number ${getStatusClass(currentValue, 'current')}`}>
-                {currentValue.toFixed(5)}
-              </div>
-              <div className="value-unit">Amperes</div>
-            </div>
-
-            {/* Current Wave Graph */}
-            <div className="chart-wrapper">
-              <h3 className="chart-title">Current Trend</h3>
-              <div className="chart-container">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={currentHistory}>
-                    <XAxis 
-                      dataKey="time" 
-                      tick={{ fontSize: 10, fill: '#9CA3AF' }}
-                      tickFormatter={formatTime}
-                    />
-                    <YAxis 
-                      tick={{ fontSize: 10, fill: '#9CA3AF' }}
-                      domain={['dataMin - 0.1', 'dataMax + 0.1']}
-                    />
-                    <Tooltip 
-                      contentStyle={{ 
-                        backgroundColor: 'rgba(0,0,0,0.8)', 
-                        border: 'none', 
-                        borderRadius: '8px',
-                        color: 'white'
-                      }}
-                      formatter={(value) => [`${value.toFixed(5)} A`, 'Current']}
-                    />
-                    <Line 
-                      type="monotone" 
-                      dataKey="value" 
-                      stroke="#3B82F6" 
-                      strokeWidth={2}
-                      dot={false}
-                      strokeDasharray="0"
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </div>
-
-          {/* Voltage Value Card */}
-          <div className="data-card">
-            <div className="card-header">
-              <div className="card-info">
-                <div className="icon-container voltage">
-                  <Activity />
-                </div>
-                <div className="card-meta">
-                  <h2>Voltage</h2>
-                  <p>Real-time voltage measurement</p>
-                </div>
-              </div>
-              <div className={`connection-indicator ${isConnected ? 'connected' : 'disconnected'}`}></div>
-            </div>
-            
-            <div className="value-display">
-              <div className={`value-number ${getStatusClass(voltageValue, 'voltage')}`}>
-                {voltageValue.toFixed(5)}
-              </div>
-              <div className="value-unit">Volts</div>
-            </div>
-
-            {/* Voltage Wave Graph */}
-            <div className="chart-wrapper">
-              <h3 className="chart-title">Voltage Trend</h3>
-              <div className="chart-container">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={voltageHistory}>
-                    <XAxis 
-                      dataKey="time" 
-                      tick={{ fontSize: 10, fill: '#9CA3AF' }}
-                      tickFormatter={formatTime}
-                    />
-                    <YAxis 
-                      tick={{ fontSize: 10, fill: '#9CA3AF' }}
-                      domain={['dataMin - 0.1', 'dataMax + 0.1']}
-                    />
-                    <Tooltip 
-                      contentStyle={{ 
-                        backgroundColor: 'rgba(0,0,0,0.8)', 
-                        border: 'none', 
-                        borderRadius: '8px',
-                        color: 'white'
-                      }}
-                      formatter={(value) => [`${value.toFixed(5)} V`, 'Voltage']}
-                    />
-                    <Line 
-                      type="monotone" 
-                      dataKey="value" 
-                      stroke="#F59E0B" 
-                      strokeWidth={2}
-                      dot={false}
-                      strokeDasharray="0"
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Combined Overview Chart */}
-        <div className="combined-chart-card">
-          <h2 className="combined-title">
-            📊 Combined Data Overview
+        {/* Error State */}
+        <div style={{
+          background: 'rgba(255,255,255,0.95)',
+          borderRadius: '15px',
+          padding: '40px',
+          textAlign: 'center',
+          boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
+          maxWidth: '600px',
+          margin: '0 auto'
+        }}>
+          <div style={{ fontSize: '4rem', marginBottom: '20px' }}>🚫</div>
+          <h2 style={{ color: '#e74c3c', marginBottom: '20px' }}>
+            No Data Available
           </h2>
-          <div className="combined-chart-wrapper">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart>
-                <XAxis 
-                  dataKey="time" 
-                  tick={{ fontSize: 12, fill: '#9CA3AF' }}
-                  type="category"
-                  allowDuplicatedCategory={false}
-                />
-                <YAxis 
-                  yAxisId="current"
-                  orientation="left"
-                  tick={{ fontSize: 12, fill: '#3B82F6' }}
-                  label={{ value: 'Current (A)', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#3B82F6' } }}
-                />
-                <YAxis 
-                  yAxisId="voltage"
-                  orientation="right"
-                  tick={{ fontSize: 12, fill: '#F59E0B' }}
-                  label={{ value: 'Voltage (V)', angle: 90, position: 'insideRight', style: { textAnchor: 'middle', fill: '#F59E0B' } }}
-                />
-                <Tooltip 
-                  contentStyle={{ 
-                    backgroundColor: 'rgba(0,0,0,0.9)', 
-                    border: 'none', 
-                    borderRadius: '8px',
-                    color: 'white'
-                  }}
-                />
-                <Line 
-                  yAxisId="current"
-                  type="monotone" 
-                  dataKey="value" 
-                  data={currentHistory}
-                  stroke="#3B82F6" 
-                  strokeWidth={3}
-                  dot={false}
-                  name="Current (A)"
-                />
-                <Line 
-                  yAxisId="voltage"
-                  type="monotone" 
-                  dataKey="value" 
-                  data={voltageHistory}
-                  stroke="#F59E0B" 
-                  strokeWidth={3}
-                  dot={false}
-                  name="Voltage (V)"
-                />
-              </LineChart>
-            </ResponsiveContainer>
+          <p style={{ color: '#7f8c8d', marginBottom: '20px', lineHeight: '1.6' }}>
+            {error}
+          </p>
+          
+          <div style={{
+            background: '#fff3cd',
+            border: '1px solid #ffeaa7',
+            borderRadius: '8px',
+            padding: '20px',
+            marginBottom: '20px',
+            color: '#856404',
+            textAlign: 'left'
+          }}>
+            <h4 style={{ margin: '0 0 15px 0' }}>📋 Steps to fix this issue:</h4>
+            <ol style={{ margin: '0', paddingLeft: '20px' }}>
+              <li style={{ marginBottom: '8px' }}>
+                Open your Google Sheet: <a href={`https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit`} target="_blank" rel="noopener noreferrer" style={{ color: '#0366d6' }}>Click here</a>
+              </li>
+              <li style={{ marginBottom: '8px' }}>Click "Share" → Change to "Anyone with the link" → Set to "Viewer"</li>
+              <li style={{ marginBottom: '8px' }}>Make sure your sheet has a tab named "{SHEET_NAME}"</li>
+              <li style={{ marginBottom: '8px' }}>Ensure columns are named: Date, Time, HR, SPO2, BP, Glucose, Finger</li>
+              <li>Click the refresh button below to try again</li>
+            </ol>
+          </div>
+
+          <button
+            onClick={fetchGoogleSheetData}
+            disabled={loading}
+            style={{
+              background: loading ? '#bdc3c7' : '#3498db',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              padding: '15px 30px',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              fontSize: '1rem',
+              fontWeight: 'bold',
+              boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+            }}
+          >
+            {loading ? '⏳ Trying to Connect...' : '🔄 Try Again'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{
+      minHeight: '100vh',
+      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      padding: '20px',
+      fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif"
+    }}>
+      {/* Header */}
+      <div style={{
+        textAlign: 'center',
+        marginBottom: '30px',
+        color: 'white'
+      }}>
+        <h1 style={{
+          fontSize: '2.5rem',
+          margin: '0',
+          textShadow: '2px 2px 4px rgba(0,0,0,0.3)'
+        }}>
+          🏥 Health Performance Trends
+        </h1>
+        <p style={{ fontSize: '1.1rem', opacity: 0.9 }}>
+          Real-time monitoring from Google Sheets • Last updated: {lastUpdate}
+        </p>
+      </div>
+
+      {/* Connection Status */}
+      <div style={{
+        background: 'rgba(255,255,255,0.95)',
+        borderRadius: '15px',
+        padding: '20px',
+        marginBottom: '30px',
+        boxShadow: '0 10px 30px rgba(0,0,0,0.2)'
+      }}>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '15px'
+        }}>
+          <div>
+            <h3 style={{ margin: '0', color: '#2c3e50' }}>📊 Live Connection Status</h3>
+            <p style={{ margin: '5px 0 0 0', color: '#7f8c8d' }}>
+              Status: {connectionStatus} | Source: {dataSource} | Records: {healthData.length}
+            </p>
+          </div>
+          <button
+            onClick={fetchGoogleSheetData}
+            disabled={loading}
+            style={{
+              background: loading ? '#bdc3c7' : '#27ae60',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              padding: '12px 24px',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              fontSize: '0.9rem',
+              fontWeight: 'bold',
+              boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+              transition: 'all 0.3s ease'
+            }}
+          >
+            {loading ? '⏳ Refreshing...' : '🔄 Refresh Now'}
+          </button>
+        </div>
+        
+        <div style={{
+          background: '#e8f5e8',
+          border: '1px solid #c3e6c3',
+          borderRadius: '8px',
+          padding: '12px',
+          color: '#2d5a2d'
+        }}>
+          <p style={{ margin: '0', fontSize: '0.9rem' }}>
+            ✅ <strong>Live Data Active:</strong> Auto-refreshing every 30 seconds from "{SHEET_NAME}" sheet
+          </p>
+        </div>
+      </div>
+
+      {/* Current Status Cards - Only show if we have real data */}
+      {currentData && (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+          gap: '20px',
+          marginBottom: '30px'
+        }}>
+          <div style={{
+            background: 'rgba(255,255,255,0.95)',
+            borderRadius: '15px',
+            padding: '20px',
+            textAlign: 'center',
+            boxShadow: '0 10px 30px rgba(0,0,0,0.2)'
+          }}>
+            <div style={{ fontSize: '2rem', marginBottom: '10px' }}>❤️</div>
+            <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#e74c3c' }}>
+              {currentData.hr} BPM
+            </div>
+            <div style={{ color: '#7f8c8d' }}>Heart Rate</div>
+            <div style={{ fontSize: '0.8rem', color: '#95a5a6', marginTop: '5px' }}>
+              {currentData.timestamp}
+            </div>
           </div>
           
-          {/* Legend */}
-          <div className="chart-legend">
-            <div className="legend-item">
-              <div className="legend-color current"></div>
-              <span className="legend-text">Current (A)</span>
+          <div style={{
+            background: 'rgba(255,255,255,0.95)',
+            borderRadius: '15px',
+            padding: '20px',
+            textAlign: 'center',
+            boxShadow: '0 10px 30px rgba(0,0,0,0.2)'
+          }}>
+            <div style={{ fontSize: '2rem', marginBottom: '10px' }}>🫁</div>
+            <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#3498db' }}>
+              {currentData.spo2}%
             </div>
-            <div className="legend-item">
-              <div className="legend-color voltage"></div>
-              <span className="legend-text">Voltage (V)</span>
+            <div style={{ color: '#7f8c8d' }}>SpO2</div>
+            <div style={{ fontSize: '0.8rem', color: '#95a5a6', marginTop: '5px' }}>
+              {currentData.timestamp}
+            </div>
+          </div>
+          
+          <div style={{
+            background: 'rgba(255,255,255,0.95)',
+            borderRadius: '15px',
+            padding: '20px',
+            textAlign: 'center',
+            boxShadow: '0 10px 30px rgba(0,0,0,0.2)'
+          }}>
+            <div style={{ fontSize: '2rem', marginBottom: '10px' }}>🩸</div>
+            <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#9b59b6' }}>
+              {currentData.bp}
+            </div>
+            <div style={{ color: '#7f8c8d' }}>Blood Pressure</div>
+            <div style={{ fontSize: '0.8rem', color: '#95a5a6', marginTop: '5px' }}>
+              {currentData.timestamp}
+            </div>
+          </div>
+          
+          <div style={{
+            background: 'rgba(255,255,255,0.95)',
+            borderRadius: '15px',
+            padding: '20px',
+            textAlign: 'center',
+            boxShadow: '0 10px 30px rgba(0,0,0,0.2)'
+          }}>
+            <div style={{ fontSize: '2rem', marginBottom: '10px' }}>🍯</div>
+            <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#f39c12' }}>
+              {currentData.glucose}
+            </div>
+            <div style={{ color: '#7f8c8d' }}>Glucose (mg/dL)</div>
+            <div style={{ fontSize: '0.8rem', color: '#95a5a6', marginTop: '5px' }}>
+              {currentData.timestamp}
+            </div>
+          </div>
+          
+          <div style={{
+            background: 'rgba(255,255,255,0.95)',
+            borderRadius: '15px',
+            padding: '20px',
+            textAlign: 'center',
+            boxShadow: '0 10px 30px rgba(0,0,0,0.2)'
+          }}>
+            <div style={{ fontSize: '2rem', marginBottom: '10px' }}>
+              {currentData.finger === 1 ? '👆' : '✋'}
+            </div>
+            <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: currentData.finger === 1 ? '#27ae60' : '#e74c3c' }}>
+              {currentData.finger === 1 ? 'Finger Pressed' : 'Finger Not Pressed'}
+            </div>
+            <div style={{ color: '#7f8c8d' }}>Finger Status</div>
+            <div style={{ fontSize: '0.8rem', color: '#95a5a6', marginTop: '5px' }}>
+              {currentData.timestamp}
             </div>
           </div>
         </div>
+      )}
 
-        {/* Status Footer */}
-        <div className="dashboard-footer">
-          <div className="footer-text">
-            <p>🔄 Data updates automatically from Firebase Realtime Database</p>
-            <p>📡 Connection status: {isConnected ? '✅ Connected' : '❌ Disconnected'}</p>
+      {/* Performance Trends - Only show if we have real data */}
+      {healthData.length > 0 && (
+        <div style={{
+          background: 'rgba(255,255,255,0.95)',
+          borderRadius: '15px',
+          padding: '20px',
+          marginBottom: '30px',
+          boxShadow: '0 10px 30px rgba(0,0,0,0.2)'
+        }}>
+          <h2 style={{ margin: '0 0 30px 0', color: '#2c3e50' }}>Performance Trends</h2>
+          
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))',
+            gap: '30px'
+          }}>
+            {/* Heart Rate Trend */}
+            <div>
+              <h3 style={{ color: '#2c3e50', marginBottom: '15px' }}>Heart Rate Trend</h3>
+              <div style={{
+                background: '#fff5f5',
+                border: '2px solid #fed7d7',
+                borderRadius: '10px',
+                padding: '15px',
+                marginBottom: '15px'
+              }}>
+                <div style={{ color: '#c53030', fontWeight: 'bold', marginBottom: '10px' }}>
+                  {currentData && getStatusMessage('hr', currentData.hr)}
+                </div>
+                <ol style={{ margin: '0', paddingLeft: '20px', color: '#4a5568' }}>
+                  {getRecommendations('hr', currentData?.hr).map((rec, i) => (
+                    <li key={i}>{rec}</li>
+                  ))}
+                </ol>
+              </div>
+              <canvas
+                ref={canvasRefs.hr}
+                width="380"
+                height="200"
+                style={{
+                  width: '100%',
+                  height: '200px',
+                  border: '1px solid #e0e0e0',
+                  borderRadius: '8px'
+                }}
+              />
+            </div>
+
+            {/* SpO2 Trend */}
+            <div>
+              <h3 style={{ color: '#2c3e50', marginBottom: '15px' }}>SpO2 Trend</h3>
+              <div style={{
+                background: '#f0f9ff',
+                border: '2px solid #bee3f8',
+                borderRadius: '10px',
+                padding: '15px',
+                marginBottom: '15px'
+              }}>
+                <div style={{ color: '#2b6cb0', fontWeight: 'bold', marginBottom: '10px' }}>
+                  {currentData && getStatusMessage('spo2', currentData.spo2)}
+                </div>
+                <ol style={{ margin: '0', paddingLeft: '20px', color: '#4a5568' }}>
+                  {getRecommendations('spo2', currentData?.spo2).map((rec, i) => (
+                    <li key={i}>{rec}</li>
+                  ))}
+                </ol>
+              </div>
+              <canvas
+                ref={canvasRefs.spo2}
+                width="380"
+                height="200"
+                style={{
+                  width: '100%',
+                  height: '200px',
+                  border: '1px solid #e0e0e0',
+                  borderRadius: '8px'
+                }}
+              />
+            </div>
+
+            {/* Blood Pressure Trend */}
+            <div>
+              <h3 style={{ color: '#2c3e50', marginBottom: '15px' }}>Blood Pressure Trend</h3>
+              <div style={{
+                background: '#faf5ff',
+                border: '2px solid #e9d8fd',
+                borderRadius: '10px',
+                padding: '15px',
+                marginBottom: '15px'
+              }}>
+                <div style={{ color: '#805ad5', fontWeight: 'bold', marginBottom: '10px' }}>
+                  {currentData && getStatusMessage('bp', currentData.bp)}
+                </div>
+                <ol style={{ margin: '0', paddingLeft: '20px', color: '#4a5568' }}>
+                  {getRecommendations('bp', currentData?.bp).map((rec, i) => (
+                    <li key={i}>{rec}</li>
+                  ))}
+                </ol>
+              </div>
+              <canvas
+                ref={canvasRefs.bp}
+                width="380"
+                height="200"
+                style={{
+                  width: '100%',
+                  height: '200px',
+                  border: '1px solid #e0e0e0',
+                  borderRadius: '8px'
+                }}
+              />
+            </div>
+
+            {/* Glucose Trend */}
+            <div>
+              <h3 style={{ color: '#2c3e50', marginBottom: '15px' }}>Glucose Trend</h3>
+              <div style={{
+                background: '#fffbf0',
+                border: '2px solid #feebc8',
+                borderRadius: '10px',
+                padding: '15px',
+                marginBottom: '15px'
+              }}>
+                <div style={{ color: '#d69e2e', fontWeight: 'bold', marginBottom: '10px' }}>
+                  {currentData && getStatusMessage('glucose', currentData.glucose)}
+                </div>
+                <ol style={{ margin: '0', paddingLeft: '20px', color: '#4a5568' }}>
+                  {getRecommendations('glucose', currentData?.glucose).map((rec, i) => (
+                    <li key={i}>{rec}</li>
+                  ))}
+                </ol>
+              </div>
+              <canvas
+                ref={canvasRefs.glucose}
+                width="380"
+                height="200"
+                style={{
+                  width: '100%',
+                  height: '200px',
+                  border: '1px solid #e0e0e0',
+                  borderRadius: '8px'
+                }}
+              />
+            </div>
           </div>
         </div>
+      )}
+
+      {/* Alerts Section - Only show if we have alerts */}
+      {alerts.length > 0 && (
+        <div style={{
+          background: 'rgba(255,255,255,0.95)',
+          borderRadius: '15px',
+          padding: '20px',
+          boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
+          marginBottom: '30px'
+        }}>
+          <h2 style={{ margin: '0 0 15px 0', color: '#2c3e50' }}>
+            🚨 Recent Alerts & Notifications
+          </h2>
+          {alerts.map(alert => (
+            <div
+              key={alert.id}
+              style={{
+                padding: '15px',
+                margin: '10px 0',
+                borderRadius: '10px',
+                background: alert.type === 'danger' ? '#fff5f5' : 
+                           alert.type === 'warning' ? '#fffbf0' : '#f0f9ff',
+                border: `2px solid ${alert.type === 'danger' ? '#fed7d7' : 
+                                    alert.type === 'warning' ? '#feebc8' : '#bee3f8'}`
+              }}
+            >
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <span style={{
+                  fontSize: '1.1rem',
+                  color: alert.type === 'danger' ? '#c53030' : 
+                         alert.type === 'warning' ? '#d69e2e' : '#2b6cb0'
+                }}>
+                  {alert.message}
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{
+                    fontSize: '0.9rem',
+                    color: '#718096'
+                  }}>
+                    {alert.time}
+                  </span>
+                  <button
+                    onClick={() => removeAlert(alert.id)}
+                    style={{
+                      background: '#e53e3e',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '4px 8px',
+                      fontSize: '0.8rem',
+                      cursor: 'pointer',
+                      transition: 'background-color 0.2s'
+                    }}
+                    onMouseOver={(e) => e.target.style.background = '#c53030'}
+                    onMouseOut={(e) => e.target.style.background = '#e53e3e'}
+                    title="Remove notification"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+              <div style={{
+                fontSize: '0.9rem',
+                color: '#4a5568',
+                marginTop: '5px'
+              }}>
+                📱 Telegram notification sent • Glucose: {alert.glucose} mg/dL
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Footer */}
+      <div style={{
+        textAlign: 'center',
+        color: 'rgba(255,255,255,0.8)',
+        fontSize: '0.9rem'
+      }}>
+        <p>📊 Live data updates every 30 seconds automatically</p>
+        <p>Connected to Google Sheets • Sheet: "{SHEET_NAME}" • Records: {healthData.length}</p>
+        <p>Sheet ID: {SHEET_ID}</p>
       </div>
     </div>
   );
 };
 
-export default Dashboard;
+export default HealthMonitorDashboard;
