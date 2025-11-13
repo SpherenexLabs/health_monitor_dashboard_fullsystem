@@ -1301,7 +1301,7 @@ const HealthMonitorDashboard = () => {
           color: '#2d5a2d'
         }}>
           <p style={{ margin: '0', fontSize: '0.9rem' }}>
-            ✅ <strong>Live Data Active:</strong> Auto-refreshing every 30 seconds from "{SHEET_NAME}" sheet
+            ✅ <strong>Live Data Active:</strong> Auto-refreshing every 30 seconds
           </p>
         </div>
       </div>
