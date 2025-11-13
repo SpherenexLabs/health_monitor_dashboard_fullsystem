@@ -131,6 +131,7 @@ const App = () => {
     
     // Clean up interval on component unmount
     return () => clearInterval(intervalId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const checkGlucoseLevel = (glucose) => {
@@ -378,6 +379,7 @@ const App = () => {
       drawTrendChart(canvasRefs.bp, bpData, '#9b59b6', 'Blood Pressure', 'mmHg');
       drawTrendChart(canvasRefs.glucose, glucoseData, '#f39c12', 'Glucose', 'mg/dL');
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [healthData]);
 
   if (loading) {
